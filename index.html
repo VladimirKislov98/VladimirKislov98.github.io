@@ -24,9 +24,10 @@
   .card h2{font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;
            margin:0 0 10px;font-weight:700}
   label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
-  input, .ro{width:100%;background:var(--bg-three);color:var(--text);
+  input, select, .ro{width:100%;background:var(--bg-three);color:var(--text);
         border:1px solid var(--dark-four);border-radius:8px;padding:9px 10px;font-size:15px;outline:none}
-  input:focus{border-color:var(--accent)}
+  input:focus, select:focus{border-color:var(--accent)}
+  select{appearance:none;-webkit-appearance:none}
   .ro{background:var(--dark-three);color:var(--muted)}
   .row2{display:flex;gap:8px}
   .row2>div{flex:1}
@@ -58,8 +59,8 @@
 
   <div class="card">
     <h2>Объект</h2>
-    <label>Объект (адрес)</label>
-    <div class="ro" id="addr">—</div>
+    <label>Выезд (выберите объект)</label>
+    <select id="objsel"></select>
     <label>№ дела</label>
     <div class="ro" id="caseno">—</div>
     <label>Проверяемая организация (юрлицо)</label>
@@ -98,7 +99,7 @@
 
   // Версия формы — видно в заголовке. Бампайте при каждом изменении файла,
   // чтобы сразу понять, подхватилась ли свежая версия в Mini App.
-  var FORM_VERSION = 'v4 · 25.06';
+  var FORM_VERSION = 'v5 · выбор объекта';
   try { document.getElementById('ver').textContent = FORM_VERSION; } catch(e){}
 
   // --- разбор launch hash (данные выезда из кнопки бота) ---
@@ -116,10 +117,12 @@
     }catch(e){ return null; }
   }
 
-  // trip/defExec заполняются в renderForm() — он перечитывает hash при каждом
-  // открытии (VK может переиспользовать уже открытое окно приложения).
-  var trip = {};
+  // Состояние: все выезды дня + выбранный. Объект выбирается в форме —
+  // VK переиспользует окно и не передаёт новые launch-данные при повторном тапе.
+  var trips = [];
+  var cur = null;
   var defExec = '';
+  var groupId = 0;
   var lastHash = null;
 
   function todayStr(){
@@ -158,21 +161,45 @@
 
   function clearWorks(){ while(worksEl.firstChild){ worksEl.removeChild(worksEl.firstChild); } }
 
-  function renderForm(){
-    trip = decodeHash() || {};
-    defExec = trip.e || '';
-    document.getElementById('addr').textContent = trip.a || '—';
-    document.getElementById('caseno').textContent = trip.c || '—';
-    document.getElementById('org').value = trip.o || '';
-    document.getElementById('departure').value = trip.dt || todayStr();
-    // ЭЗ и дата ЭЗ — предзаполняются из выезда, иначе разумные умолчания.
-    document.getElementById('ez').value = trip.ez || '';
-    document.getElementById('ezdate').value = trip.ezd || trip.dt || todayStr();
+  function parseData(){
+    var obj = decodeHash() || {};
+    if(Array.isArray(obj.ts)) return {ts: obj.ts, e: obj.e||'', g: obj.g||0};
+    // совместимость со старым форматом (один выезд в hash)
+    return {ts: obj.c ? [obj] : [], e: obj.e||'', g: obj.g||0};
+  }
+
+  function selectTrip(i){
+    cur = trips[i] || null;
+    if(!cur){ clearWorks(); return; }
+    document.getElementById('caseno').textContent = cur.c || '—';
+    document.getElementById('org').value = cur.o || '';
+    document.getElementById('departure').value = cur.dt || todayStr();
+    document.getElementById('ez').value = cur.ez || '';
+    document.getElementById('ezdate').value = cur.ezd || cur.dt || todayStr();
     clearWorks();
-    var planned = Array.isArray(trip.w) ? trip.w : [];
+    var planned = Array.isArray(cur.w) ? cur.w : [];
     if(planned.length){ planned.forEach(function(idx){ worksEl.appendChild(workRow(idx)); }); }
     else { worksEl.appendChild(workRow('')); }
     var n=document.getElementById('note'); if(n){ n.textContent=''; n.classList.add('hidden'); }
+  }
+
+  function renderForm(){
+    var d = parseData();
+    trips = d.ts; defExec = d.e; groupId = d.g;
+    var sel = document.getElementById('objsel');
+    sel.innerHTML = '';
+    if(!trips.length){
+      var o0=document.createElement('option'); o0.value=''; o0.textContent='Нет выездов на сегодня';
+      sel.appendChild(o0); cur=null; clearWorks(); lastHash=location.hash; return;
+    }
+    trips.forEach(function(t,i){
+      var o=document.createElement('option'); o.value=String(i);
+      o.textContent=(t.a||'объект')+' (дело '+(t.c||'?')+')';
+      sel.appendChild(o);
+    });
+    sel.onchange=function(){ selectTrip(Number(sel.value)); };
+    sel.value='0';
+    selectTrip(0);
     lastHash = location.hash;
   }
 
@@ -211,7 +238,7 @@
     });
     return {
       type:'field_report',
-      case_number: trip.c || '',
+      case_number: (cur && cur.c) || '',
       organization:(document.getElementById('org').value||'').trim(),
       departure:(document.getElementById('departure').value||'').trim(),
       ez_number:(document.getElementById('ez').value||'').trim(),
@@ -248,7 +275,6 @@
     var p=collect();
     var errs=validate(p);
     if(errs.length){ showNote('Проверьте: '+errs.join('; ')); return; }
-    var groupId = trip.g || 0;
     if(!(bridge && groupId)){
       showNote('Превью (вне VK). Данные: '+JSON.stringify(p), 'var(--muted)');
       return;
