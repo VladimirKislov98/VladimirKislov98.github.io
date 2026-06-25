@@ -99,7 +99,7 @@
 
   // Версия формы — видно в заголовке. Бампайте при каждом изменении файла,
   // чтобы сразу понять, подхватилась ли свежая версия в Mini App.
-  var FORM_VERSION = 'v5 · выбор объекта';
+  var FORM_VERSION = 'v6 · выбор объекта';
   try { document.getElementById('ver').textContent = FORM_VERSION; } catch(e){}
 
   // --- разбор launch hash (данные выезда из кнопки бота) ---
@@ -194,7 +194,7 @@
     }
     trips.forEach(function(t,i){
       var o=document.createElement('option'); o.value=String(i);
-      o.textContent=(t.a||'объект')+' (дело '+(t.c||'?')+')';
+      o.textContent = t.a ? (t.a+' (дело '+(t.c||'?')+')') : ('Дело № '+(t.c||'?'));
       sel.appendChild(o);
     });
     sel.onchange=function(){ selectTrip(Number(sel.value)); };
