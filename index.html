@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<title>Отчёт по выезду</title>
+<script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
+<style>
+  :root{
+    --bg-one:#2c313c; --bg-two:#343b48; --bg-three:#3c4454;
+    --dark-three:#21252d; --dark-four:#272c36;
+    --text:#dce1ec; --muted:#8a95aa; --accent:#568af2; --accent-h:#6c99f4;
+    --red:#e05252; --green:#4caf50; --yellow:#f0b429; --white:#f5f6f9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg-one);color:var(--text);
+       font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;font-size:15px;padding:14px 12px 90px;}
+  h1{font-size:18px;font-weight:700;margin:4px 0 14px}
+  .card{background:var(--bg-two);border:1px solid var(--dark-four);border-radius:12px;
+        padding:12px;margin-bottom:12px}
+  .card h2{font-size:13px;color:var(--accent);text-transform:uppercase;letter-spacing:.5px;
+           margin:0 0 10px;font-weight:700}
+  label{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px}
+  input, .ro{width:100%;background:var(--bg-three);color:var(--text);
+        border:1px solid var(--dark-four);border-radius:8px;padding:9px 10px;font-size:15px;outline:none}
+  input:focus{border-color:var(--accent)}
+  .ro{background:var(--dark-three);color:var(--muted)}
+  .row2{display:flex;gap:8px}
+  .row2>div{flex:1}
+  .work{background:var(--bg-three);border:1px solid var(--dark-four);border-radius:10px;
+        padding:10px;margin-bottom:10px;position:relative}
+  .work .idx{font-weight:700;color:var(--text);margin-bottom:6px;display:flex;align-items:center;gap:8px}
+  .work .idx input{font-weight:700}
+  .seg{display:flex;gap:6px;margin:6px 0}
+  .seg button{flex:1;background:var(--bg-two);color:var(--muted);border:1px solid var(--dark-four);
+        border-radius:8px;padding:8px;font-size:13px;cursor:pointer}
+  .seg button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .seg button.on.no{background:var(--red);border-color:var(--red)}
+  .del{position:absolute;top:8px;right:8px;background:transparent;border:none;color:var(--muted);
+       font-size:18px;cursor:pointer}
+  .addbtn{width:100%;background:var(--bg-two);color:var(--accent);border:1px dashed var(--accent);
+       border-radius:10px;padding:11px;font-size:14px;font-weight:600;cursor:pointer}
+  .bar{position:fixed;left:0;right:0;bottom:0;background:var(--bg-one);
+       border-top:1px solid var(--dark-four);padding:10px 12px;display:flex;gap:10px}
+  .send{flex:1;background:var(--accent);color:#fff;border:none;border-radius:10px;padding:14px;
+        font-size:16px;font-weight:700;cursor:pointer}
+  .send:active{background:var(--accent-h)}
+  .hint{color:var(--muted);font-size:12px;margin-top:4px}
+  .hidden{display:none}
+  .note{color:var(--yellow);font-size:13px;margin-top:8px}
+</style>
+</head>
+<body>
+  <h1>Отчёт по выезду</h1>
+
+  <div class="card">
+    <h2>Объект</h2>
+    <label>Объект (адрес)</label>
+    <div class="ro" id="addr">—</div>
+    <label>№ дела</label>
+    <div class="ro" id="caseno">—</div>
+    <label>Проверяемая организация (юрлицо)</label>
+    <input id="org" placeholder="ООО …" />
+    <div class="row2">
+      <div>
+        <label>Дата выезда</label>
+        <input id="departure" placeholder="дд.мм.гггг" />
+      </div>
+      <div>
+        <label>№ ЭЗ</label>
+        <input id="ez" placeholder="56/7" />
+      </div>
+    </div>
+    <label>Дата ЭЗ</label>
+    <input id="ezdate" placeholder="дд.мм.гггг" />
+  </div>
+
+  <div class="card">
+    <h2>Выполненные работы</h2>
+    <div id="works"></div>
+    <button class="addbtn" id="add">+ Добавить работу</button>
+    <div class="hint">Для невыполненной работы выберите «Не выполнена» и укажите код причины.</div>
+  </div>
+
+  <div id="note" class="note hidden"></div>
+
+  <div class="bar">
+    <button class="send" id="send">Отправить отчёт</button>
+  </div>
+
+<script>
+(function(){
+  var bridge = window.vkBridge;
+  try { if (bridge) bridge.send('VKWebAppInit', {}); } catch(e){}
+
+  // --- разбор launch hash (данные выезда из кнопки бота) ---
+  function decodeHash(){
+    try{
+      var h = (location.hash || '').replace(/^#/, '');
+      // hash приходит как base64url(JSON). Также поддержим ?vk_..& часть.
+      var m = h.match(/(?:^|&)d=([^&]+)/);
+      var raw = m ? m[1] : h;
+      if(!raw) return null;
+      raw = raw.replace(/-/g,'+').replace(/_/g,'/');
+      while(raw.length % 4) raw += '=';
+      var json = decodeURIComponent(escape(atob(raw)));
+      return JSON.parse(json);
+    }catch(e){ return null; }
+  }
+
+  var trip = decodeHash() || {};
+  var defExec = trip.e || '';
+
+  function todayStr(){
+    var d=new Date(), p=function(n){return (n<10?'0':'')+n;};
+    return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear();
+  }
+
+  document.getElementById('addr').textContent = trip.a || '—';
+  document.getElementById('caseno').textContent = trip.c || '—';
+  document.getElementById('org').value = trip.o || '';
+  document.getElementById('departure').value = trip.dt || todayStr();
+  // ЭЗ и дата ЭЗ — предзаполняются из выезда (если есть), иначе разумные значения по умолчанию.
+  document.getElementById('ez').value = trip.ez || '';
+  document.getElementById('ezdate').value = trip.ezd || trip.dt || todayStr();
+
+  var worksEl = document.getElementById('works');
+
+  function workRow(index){
+    var wrap = document.createElement('div'); wrap.className='work';
+    wrap.innerHTML =
+      '<button class="del" title="Удалить">✕</button>'+
+      '<div class="idx">Работа <input class="w-idx" style="width:120px" value="'+escapeHtml(index||'')+'" placeholder="1.19.7"/></div>'+
+      '<div class="seg">'+
+        '<button type="button" class="b-done on">Выполнена</button>'+
+        '<button type="button" class="b-no no">Не выполнена</button>'+
+      '</div>'+
+      '<div class="done-fields">'+
+        '<label>№ протокола</label><input class="w-proto" placeholder="101/2026"/>'+
+        '<label>Образец</label><input class="w-sample" placeholder="напр. Бетон М300"/>'+
+      '</div>'+
+      '<div class="no-fields hidden">'+
+        '<label>Код причины невыполнения</label><input class="w-reason" placeholder="напр. 3"/>'+
+      '</div>'+
+      '<label>Исполнитель</label><input class="w-exec" value="'+escapeHtml(defExec)+'"/>';
+    // toggle
+    var bDone=wrap.querySelector('.b-done'), bNo=wrap.querySelector('.b-no');
+    var df=wrap.querySelector('.done-fields'), nf=wrap.querySelector('.no-fields');
+    bDone.onclick=function(){bDone.classList.add('on');bNo.classList.remove('on');df.classList.remove('hidden');nf.classList.add('hidden');};
+    bNo.onclick=function(){bNo.classList.add('on');bDone.classList.remove('on');nf.classList.remove('hidden');df.classList.add('hidden');};
+    wrap.querySelector('.del').onclick=function(){wrap.remove();};
+    return wrap;
+  }
+  function escapeHtml(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+
+  var planned = Array.isArray(trip.w) ? trip.w : [];
+  if(planned.length){ planned.forEach(function(idx){ worksEl.appendChild(workRow(idx)); }); }
+  else { worksEl.appendChild(workRow('')); }
+
+  document.getElementById('add').onclick=function(){ worksEl.appendChild(workRow('')); };
+
+  function collect(){
+    var works=[];
+    worksEl.querySelectorAll('.work').forEach(function(w){
+      var idx=(w.querySelector('.w-idx').value||'').trim();
+      if(!idx) return;
+      var done = w.querySelector('.b-done').classList.contains('on');
+      var item={index:idx, executor:(w.querySelector('.w-exec').value||'').trim()};
+      if(done){
+        item.protocol=(w.querySelector('.w-proto').value||'').trim();
+        item.sample=(w.querySelector('.w-sample').value||'').trim();
+      } else {
+        item.reason=(w.querySelector('.w-reason').value||'').trim();
+      }
+      works.push(item);
+    });
+    return {
+      type:'field_report',
+      case_number: trip.c || '',
+      organization:(document.getElementById('org').value||'').trim(),
+      departure:(document.getElementById('departure').value||'').trim(),
+      ez_number:(document.getElementById('ez').value||'').trim(),
+      ez_date:(document.getElementById('ezdate').value||'').trim(),
+      works:works
+    };
+  }
+
+  function validate(p){
+    var errs=[];
+    if(!p.case_number) errs.push('нет № дела (откройте форму через кнопку бота)');
+    if(!p.works.length) errs.push('добавьте хотя бы одну работу');
+    p.works.forEach(function(w){
+      if(!w.executor) errs.push('работа '+w.index+': нет исполнителя');
+      if(w.protocol!==undefined){ if(!/^\d+\/\d+$/.test(w.protocol)) errs.push('работа '+w.index+': протокол вида ЧИСЛО/ЧИСЛО'); }
+      else if(!w.reason) errs.push('работа '+w.index+': нет кода причины');
+    });
+    return errs;
+  }
+
+  function showNote(text,color){
+    var n=document.getElementById('note'); n.textContent=text;
+    n.style.color=color||'var(--yellow)'; n.classList.remove('hidden');
+  }
+
+  document.getElementById('send').onclick=function(){
+    var p=collect();
+    var errs=validate(p);
+    if(errs.length){ showNote('Проверьте: '+errs.join('; ')); return; }
+    var groupId = trip.g || 0;
+    if(bridge && groupId){
+      bridge.send('VKWebAppSendPayload', {group_id: Number(groupId), payload: p})
+        .then(function(){ showNote('Отправлено ✓ Отчёт уйдёт на ПК.', 'var(--green)'); })
+        .catch(function(err){ showNote('Не удалось отправить: '+JSON.stringify(err)); });
+    } else {
+      // Превью вне VK
+      showNote('Превью (вне VK). Данные: '+JSON.stringify(p), 'var(--muted)');
+    }
+  };
+})();
+</script>
+</body>
+</html>
