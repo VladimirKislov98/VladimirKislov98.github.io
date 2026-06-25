@@ -202,19 +202,40 @@
     n.style.color=color||'var(--yellow)'; n.classList.remove('hidden');
   }
 
+  function errCode(err){
+    try { return err && err.error_data && err.error_data.error_code; } catch(e){ return null; }
+  }
+  function doSend(groupId, p){
+    return bridge.send('VKWebAppSendPayload', {group_id: Number(groupId), payload: p});
+  }
+
   document.getElementById('send').onclick=function(){
     var p=collect();
     var errs=validate(p);
     if(errs.length){ showNote('Проверьте: '+errs.join('; ')); return; }
     var groupId = trip.g || 0;
-    if(bridge && groupId){
-      bridge.send('VKWebAppSendPayload', {group_id: Number(groupId), payload: p})
-        .then(function(){ showNote('Отправлено ✓ Отчёт уйдёт на ПК.', 'var(--green)'); })
-        .catch(function(err){ showNote('Не удалось отправить: '+JSON.stringify(err)); });
-    } else {
-      // Превью вне VK
+    if(!(bridge && groupId)){
       showNote('Превью (вне VK). Данные: '+JSON.stringify(p), 'var(--muted)');
+      return;
     }
+    showNote('Отправляю…', 'var(--muted)');
+    doSend(groupId, p)
+      .then(function(){ showNote('Отправлено ✓ Отчёт уйдёт на ПК.', 'var(--green)'); })
+      .catch(function(err){
+        // 711 — приложение не установлено в сообщество: предлагаем установить и повторяем.
+        if(errCode(err) === 711){
+          showNote('Приложение не установлено в сообщество — открываю установку…', 'var(--yellow)');
+          bridge.send('VKWebAppAddToCommunity')
+            .then(function(){
+              doSend(groupId, p)
+                .then(function(){ showNote('Установлено и отправлено ✓', 'var(--green)'); })
+                .catch(function(e2){ showNote('После установки отправить не вышло: '+JSON.stringify(e2)); });
+            })
+            .catch(function(e3){ showNote('Не удалось установить в сообщество: '+JSON.stringify(e3)); });
+        } else {
+          showNote('Не удалось отправить: '+JSON.stringify(err));
+        }
+      });
   };
 })();
 </script>
