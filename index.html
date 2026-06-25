@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
 <title>Отчёт по выезду</title>
 <script src="https://unpkg.com/@vkontakte/vk-bridge/dist/browser.min.js"></script>
 <style>
@@ -51,7 +54,7 @@
 </style>
 </head>
 <body>
-  <h1>Отчёт по выезду</h1>
+  <h1>Отчёт по выезду <span id="ver" style="font-size:11px;font-weight:400;color:var(--muted)"></span></h1>
 
   <div class="card">
     <h2>Объект</h2>
@@ -92,6 +95,11 @@
 (function(){
   var bridge = window.vkBridge;
   try { if (bridge) bridge.send('VKWebAppInit', {}); } catch(e){}
+
+  // Версия формы — видно в заголовке. Бампайте при каждом изменении файла,
+  // чтобы сразу понять, подхватилась ли свежая версия в Mini App.
+  var FORM_VERSION = 'v4 · 25.06';
+  try { document.getElementById('ver').textContent = FORM_VERSION; } catch(e){}
 
   // --- разбор launch hash (данные выезда из кнопки бота) ---
   function decodeHash(){
