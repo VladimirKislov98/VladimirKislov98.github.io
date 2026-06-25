@@ -108,21 +108,17 @@
     }catch(e){ return null; }
   }
 
-  var trip = decodeHash() || {};
-  var defExec = trip.e || '';
+  // trip/defExec заполняются в renderForm() — он перечитывает hash при каждом
+  // открытии (VK может переиспользовать уже открытое окно приложения).
+  var trip = {};
+  var defExec = '';
+  var lastHash = null;
 
   function todayStr(){
     var d=new Date(), p=function(n){return (n<10?'0':'')+n;};
     return p(d.getDate())+'.'+p(d.getMonth()+1)+'.'+d.getFullYear();
   }
-
-  document.getElementById('addr').textContent = trip.a || '—';
-  document.getElementById('caseno').textContent = trip.c || '—';
-  document.getElementById('org').value = trip.o || '';
-  document.getElementById('departure').value = trip.dt || todayStr();
-  // ЭЗ и дата ЭЗ — предзаполняются из выезда (если есть), иначе разумные значения по умолчанию.
-  document.getElementById('ez').value = trip.ez || '';
-  document.getElementById('ezdate').value = trip.ezd || trip.dt || todayStr();
+  function escapeHtml(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
   var worksEl = document.getElementById('works');
 
@@ -151,13 +147,44 @@
     wrap.querySelector('.del').onclick=function(){wrap.remove();};
     return wrap;
   }
-  function escapeHtml(s){return String(s||'').replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
 
-  var planned = Array.isArray(trip.w) ? trip.w : [];
-  if(planned.length){ planned.forEach(function(idx){ worksEl.appendChild(workRow(idx)); }); }
-  else { worksEl.appendChild(workRow('')); }
+  function clearWorks(){ while(worksEl.firstChild){ worksEl.removeChild(worksEl.firstChild); } }
+
+  function renderForm(){
+    trip = decodeHash() || {};
+    defExec = trip.e || '';
+    document.getElementById('addr').textContent = trip.a || '—';
+    document.getElementById('caseno').textContent = trip.c || '—';
+    document.getElementById('org').value = trip.o || '';
+    document.getElementById('departure').value = trip.dt || todayStr();
+    // ЭЗ и дата ЭЗ — предзаполняются из выезда, иначе разумные умолчания.
+    document.getElementById('ez').value = trip.ez || '';
+    document.getElementById('ezdate').value = trip.ezd || trip.dt || todayStr();
+    clearWorks();
+    var planned = Array.isArray(trip.w) ? trip.w : [];
+    if(planned.length){ planned.forEach(function(idx){ worksEl.appendChild(workRow(idx)); }); }
+    else { worksEl.appendChild(workRow('')); }
+    var n=document.getElementById('note'); if(n){ n.textContent=''; n.classList.add('hidden'); }
+    lastHash = location.hash;
+  }
 
   document.getElementById('add').onclick=function(){ worksEl.appendChild(workRow('')); };
+
+  renderForm();
+
+  // Открыли ДРУГОЙ выезд: VK может переиспользовать уже открытое окно —
+  // перечитываем данные выезда (иначе остаётся прошлый объект).
+  window.addEventListener('hashchange', renderForm);
+  function maybeReRender(){ if(location.hash !== lastHash){ renderForm(); } }
+  document.addEventListener('visibilitychange', function(){ if(!document.hidden) maybeReRender(); });
+  try{
+    if(bridge && bridge.subscribe){
+      bridge.subscribe(function(e){
+        var t = e && e.detail && e.detail.type;
+        if(t==='VKWebAppViewRestore' || t==='VKWebAppUpdateConfig'){ maybeReRender(); }
+      });
+    }
+  }catch(e){}
 
   function collect(){
     var works=[];
